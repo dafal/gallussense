@@ -61,14 +61,6 @@ A ready-to-use **Jupyter notebook (`train_model.ipynb`)** is included in the rep
 
 This makes it easy to adapt GallusSense to your own environment in just a few steps!
 
-Très bien ! On peut créer une **section claire et pratique** pour le déploiement avec Docker, incluant :
-
-1. 🔧 Liste des variables d’environnement nécessaires (extraites de ton backend)
-2. 🐳 Commandes simples pour lancer les conteneurs
-3. ⚙️ Un exemple `docker-compose.yml`
-4. 🚀 Bonus : quelques idées pour aller plus loin si tu veux améliorer le setup
-
-
 ## 🐳 Running with Docker
 
 GallusSense is designed to run easily using Docker containers for both backend processing and the frontend dashboard.
