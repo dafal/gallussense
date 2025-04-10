@@ -12,6 +12,7 @@ import logging
 from scipy.io.wavfile import write
 
 # === Basic Logging ===
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, log_level, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -57,23 +58,26 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT,
             audio_path TEXT,
-            spectrogram_path TEXT
+            spectrogram_path TEXT,
+            confidence INTEGER,
+            review_status INTEGER
         )
     ''')
     conn.commit()
     conn.close()
     logging.info("📁 Database initialized.")
 
-def log_detection(audio_path=None, spectrogram_path=None):
+def log_detection(audio_path=None, spectrogram_path=None, confidence=None):
     conn = sqlite3.connect("db/detections.db")
     now = time.strftime("%Y-%m-%d %H:%M:%S")
+    confidence_int = int(confidence * 100) if confidence is not None else None
     conn.execute(
-        "INSERT INTO detections (timestamp, audio_path, spectrogram_path) VALUES (?, ?, ?)",
-        (now, audio_path, spectrogram_path)
+        "INSERT INTO detections (timestamp, audio_path, spectrogram_path, confidence, review_status) VALUES (?, ?, ?, ?, NULL)",
+        (now, audio_path, spectrogram_path, confidence_int)
     )
     conn.commit()
     conn.close()
-    logging.debug(f"📌 Detection logged at {now} with files.")
+    logging.debug(f"📌 Detection logged at {now} with confidence {confidence_int}% and files.")
 
 def waveform_to_ascii(signal, width=60, color="gray"):
     blocks = "▁▂▃▄▅▆▇█"
@@ -266,7 +270,7 @@ def analyze_audio():
                 # If we have more than 2 pending, flush the best one
                 if len(pending_detections) >= 3:
                     best = max(pending_detections, key=lambda d: d["conf"])
-                    log_detection(best["audio_path"], best["spec_path"])
+                    log_detection(best["audio_path"], best["spec_path"], best["conf"])
                     last_detection_time = best["time"]
                     pending_detections.clear()
                     msg += " ✅ Best of 3 logged"
@@ -278,7 +282,7 @@ def analyze_audio():
                 oldest = pending_detections[0]["time"]
                 if current_time - oldest > (detection_cooldown + hop_interval):
                     best = max(pending_detections, key=lambda d: d["conf"])
-                    log_detection(best["audio_path"], best["spec_path"])
+                    log_detection(best["audio_path"], best["spec_path"], best["conf"])
                     last_detection_time = best["time"]
                     pending_detections.clear()
                     msg += " 🕒 Timeout reached, ✅ best logged"

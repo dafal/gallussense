@@ -16,7 +16,12 @@ DB_PATH = "db/detections.db"
 def get_stats():
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(
-        "SELECT timestamp, audio_path, spectrogram_path FROM detections ORDER BY timestamp DESC",
+        """
+        SELECT timestamp, audio_path, spectrogram_path
+        FROM detections
+        WHERE review_status IS NULL OR review_status = 1
+        ORDER BY timestamp DESC
+        """,
         conn,
         parse_dates=['timestamp']
     )
