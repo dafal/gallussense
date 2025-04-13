@@ -8,9 +8,23 @@ import matplotlib.pyplot as plt
 import calplot
 import numpy as np
 import os
+import yaml
+from language_detection import detect_browser_language
 
-# === Streamlit configuration ===
 st.set_page_config(page_title="GallusSense 🐓", layout="wide")
+
+# === Detect browser locales ===
+browser_language = detect_browser_language()
+language = browser_language[:2]
+if language not in ["fr", "en"]:
+    language = "en"
+
+# === Load translation files ===
+with open(f"locales/{language}.yaml", encoding="utf-8") as f:
+    translations = yaml.safe_load(f)
+
+_ = lambda key, **kwargs: translations.get(key, key).format(**kwargs)
+
 DB_PATH = "db/detections.db"
 
 # === Load detections ===
@@ -29,15 +43,13 @@ def get_stats():
     conn.close()
     return df
 
-# === Auto-refresh every 60 seconds ===
 st_autorefresh(interval=60 * 1000, key="gallus_refresh")
 
-# === Load data ===
 df = get_stats()
 
 if df.empty:
-    st.markdown("<h1 style='text-align: center'>🐓 GallusSense - Détection de Coq en Direct</h1>", unsafe_allow_html=True)
-    st.warning("Aucune détection encore 🛌")
+    st.markdown(f"<h1 style='text-align: center'>🐓 {_('title')}</h1>", unsafe_allow_html=True)
+    st.warning(_("no_data"))
 else:
     df['date'] = df['timestamp'].dt.date
     df['heure'] = df['timestamp'].dt.hour
@@ -46,41 +58,39 @@ else:
     now = datetime.now()
     recent_detection = (now - latest_ts) < timedelta(seconds=10)
 
-    # === Header with two columns (title + image) ===
     col_left, col_right = st.columns([2, 1])
 
     with col_left:
         if recent_detection:
-            st.markdown("""
+            st.markdown(f"""
                 <style>
-                .pulse {
+                .pulse {{
                     display: inline-block;
                     animation: pulse 0.6s infinite;
-                }
-                @keyframes pulse {
-                    0% { transform: scale(1); }
-                    50% { transform: scale(1.4); }
-                    100% { transform: scale(1); }
-                }
+                }}
+                @keyframes pulse {{
+                    0% {{ transform: scale(1); }}
+                    50% {{ transform: scale(1.4); }}
+                    100% {{ transform: scale(1); }}
+                }}
                 </style>
                 <h1 style='text-align: left'>
-                    <span class='pulse'>🐓</span> GallusSense - Détection de Coq en Direct
+                    <span class='pulse'>🐓</span> {_('title')}
                 </h1>
             """, unsafe_allow_html=True)
         else:
-            st.markdown("<h1 style='text-align: left'>🐓 GallusSense - Détection de Coq en Direct</h1>", unsafe_allow_html=True)
+            st.markdown(f"<h1 style='text-align: left'>🐓 {_('title')}</h1>", unsafe_allow_html=True)
 
     with col_right:
         valid_spec = df[df['spectrogram_path'].notna() & df['spectrogram_path'].str.endswith('.png')]
         if not valid_spec.empty:
             last_spec = valid_spec.iloc[0]
             if os.path.exists(last_spec['spectrogram_path']):
-                st.markdown("<h4 style='text-align: center;'>Dernière photo 📸</h4>", unsafe_allow_html=True)
+                st.markdown(f"<h4 style='text-align: center;'>{_('latest_image')}</h4>", unsafe_allow_html=True)
                 st.image(last_spec['spectrogram_path'], use_container_width=True)
             else:
-                st.info("La dernière image n'est pas disponible sur le disque.")
+                st.info(_("image_missing"))
 
-    # === Today's statistics ===
     today = datetime.now().date()
     today_df = df[df['date'] == today]
     if not today_df.empty:
@@ -88,19 +98,16 @@ else:
         first_today = today_df['timestamp'].min().strftime("%H:%M")
         last_today = today_df['timestamp'].max().strftime("%H:%M")
         st.markdown(
-            f"<h3 style='text-align:center'>📆 {today} — <b>{total_today} cocoricos</b> entre {first_today} et {last_today} 🐔</h3>",
+            f"<h3 style='text-align:center'>📆 {today} — <b>{total_today} cocoricos</b> {_('between')} {first_today} {_('and')} {last_today} 🐔</h3>",
             unsafe_allow_html=True
         )
 
-    # === Hour/day heatmap ===
     pivot_df = df.groupby(['date', 'heure']).size().unstack(fill_value=0)
     pivot_df = pivot_df.sort_index(ascending=False)
     all_hours = pd.Index(range(24), name="heure")
     pivot_df = pivot_df.reindex(columns=all_hours, fill_value=0)
     pivot_df["Total"] = pivot_df.sum(axis=1)
 
-
-    # === Création du masque des indisponibilités (no_detections)
     no_detection_mask = pd.DataFrame(False, index=pivot_df.index, columns=pivot_df.columns.drop("Total"))
     no_detection_file = "db/no_detections.txt"
     if os.path.exists(no_detection_file):
@@ -114,31 +121,19 @@ else:
                 if date in no_detection_mask.index and hour in no_detection_mask.columns:
                     no_detection_mask.at[date, hour] = True
             except Exception as e:
-                st.warning(f"⚠️ Ligne invalide dans no_detections.txt: {date_str} {hour_str}")
-
-
-
+                st.warning(_("invalid_line", date_str=date_str, hour_str=hour_str))
 
     fig, ax = plt.subplots(figsize=(13, min(0.4 * len(pivot_df), 12)))
 
     from matplotlib.colors import ListedColormap
-    import numpy as np
 
-    # Créer la palette YlOrRd, et définir une couleur spéciale pour les NaN (= no_detections)
     base_cmap = sns.color_palette("YlOrRd", as_cmap=True)
     cmap = base_cmap
-    cmap.set_bad(color="lightgray")  # gris pour les NaN (indisponibles)
+    cmap.set_bad(color="lightgray")
 
-    # On crée une copie des données, avec NaN uniquement pour les indisponibilités
-    data_to_plot = pivot_df.drop(columns=["Total"]).copy()
-    data_to_plot = data_to_plot.astype(float)  # Assurer compatibilité NaN
+    data_to_plot = pivot_df.drop(columns=["Total"]).copy().astype(float)
 
-    # Appliquer les indisponibilités (NaN pour gris)
-    no_detection_file = "db/no_detections.txt"
     if os.path.exists(no_detection_file):
-        with open(no_detection_file) as f:
-            lines = f.readlines()
-        no_detect_entries = [line.strip().split() for line in lines if line.strip()]
         for date_str, hour_str in no_detect_entries:
             try:
                 date = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -146,21 +141,20 @@ else:
                 if date in data_to_plot.index and hour in data_to_plot.columns:
                     data_to_plot.at[date, hour] = np.nan
             except Exception as e:
-                st.warning(f"⚠️ Ligne invalide dans no_detections.txt: {date_str} {hour_str}")
+                st.warning(_("invalid_line", date_str=date_str, hour_str=hour_str))
 
-    # Heatmap finale
     sns.heatmap(
-    data_to_plot,
-    cmap=cmap,
-    linewidths=0.3,
-    linecolor="gray",
-    annot=pivot_df.drop(columns=["Total"]),
-    fmt="d",
-    annot_kws={"color": "black"},
-    cbar=False,
-    xticklabels=True,
-    yticklabels=True,
-    ax=ax
+        data_to_plot,
+        cmap=cmap,
+        linewidths=0.3,
+        linecolor="gray",
+        annot=pivot_df.drop(columns=["Total"]),
+        fmt="d",
+        annot_kws={"color": "black"},
+        cbar=False,
+        xticklabels=True,
+        yticklabels=True,
+        ax=ax
     )
 
     ax.set_title("")
@@ -172,8 +166,7 @@ else:
 
     st.pyplot(fig)
 
-    # === Calendrier annuel ===
-    st.subheader("🗓️ Vue annuelle des cocoricos")
+    st.subheader(_("calendar_title"))
 
     daily_counts = df['timestamp'].dt.date.value_counts().sort_index()
     daily_counts.index = pd.to_datetime(daily_counts.index)
@@ -189,32 +182,31 @@ else:
 
     st.pyplot(fig_cal)
 
-    # === 📦 Export + 🔮 Prediction + 🏆 MVP Cocorico (3 columns) ===
     col1, col2, col3 = st.columns([1, 1, 1])
 
     with col1:
-        st.subheader("📦 Export des données")
+        st.subheader(_("export_title"))
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="⬇️ Télécharger les détections (CSV)",
+            label=_("download_label"),
             data=csv,
             file_name="detections_gallussense.csv",
             mime="text/csv",
-            help="Clique pour télécharger toutes les détections 🐓"
+            help=_("download_help")
         )
 
     with col2:
-        st.subheader("🔮 Prédiction pour demain")
+        st.subheader(_("prediction_title"))
         daily_counts = df['timestamp'].dt.date.value_counts().sort_index()
         if len(daily_counts) >= 2:
             recent_days = daily_counts[-7:]
             predicted = int(round(recent_days.mean()))
-            st.metric("Prévision", f"{predicted} 🐓")
+            st.metric(_("forecast"), f"{predicted} 🐓")
         else:
-            st.info("Pas assez de données pour prédire 😅")
+            st.info(_("not_enough_data"))
 
     with col3:
-        st.subheader("🏆 Cocorico de la semaine")
+        st.subheader(_("weekly_title"))
         last_week = datetime.now().date() - timedelta(days=7)
         week_df = df[df['date'] >= last_week]
         if not week_df.empty:
@@ -222,8 +214,8 @@ else:
             top_count = week_df['date'].value_counts().sort_values(ascending=False).iloc[0]
             jour_nom = top_day.strftime("%A %d %B")
             st.markdown(
-                f"<h5 style='text-align: center;'>🥇 <b>{jour_nom}</b><br>{top_count} cocoricos !</h5>",
+                f"<h5 style='text-align: center;'>🥇 <b>{jour_nom}</b><br>{top_count} cocoricos!</h5>",
                 unsafe_allow_html=True
             )
         else:
-            st.info("Pas assez de cocoricos cette semaine 🛌")
+            st.info(_("weekly_empty"))

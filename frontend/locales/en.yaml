@@ -1,0 +1,16 @@
+title: Live Rooster Detection
+no_data: No detections yet 🛌
+latest_image: Latest snapshot 📸
+image_missing: Latest image not found on disk.
+between: between
+and: and
+invalid_line: "⚠️ Invalid line in no_detections.txt: {date_str} {hour_str}"
+calendar_title: 🗓️ Yearly view of cocoricos
+export_title: 📦 Data export
+download_label: ⬇️ Download detections (CSV)
+download_help: Click to download all detections 🐓
+prediction_title: 🔮 Prediction for tomorrow
+forecast: Forecast
+not_enough_data: Not enough data to predict 😅
+weekly_title: 🏆 Cocorico of the week
+weekly_empty: Not enough cocoricos this week 🛌

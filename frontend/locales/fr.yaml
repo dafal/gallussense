@@ -1,0 +1,16 @@
+title: Détection de Coq en Direct
+no_data: Aucune détection encore 🛌
+latest_image: Dernière photo 📸
+image_missing: La dernière image n'est pas disponible sur le disque.
+between: entre
+and: et
+invalid_line: "⚠️ Ligne invalide dans no_detections.txt: {date_str} {hour_str}"
+calendar_title: 🗓️ Vue annuelle des cocoricos
+export_title: 📦 Export des données
+download_label: ⬇️ Télécharger les détections (CSV)
+download_help: Clique pour télécharger toutes les détections 🐓
+prediction_title: 🔮 Prédiction pour demain
+forecast: Prévision
+not_enough_data: Pas assez de données pour prédire 😅
+weekly_title: 🏆 Cocorico de la semaine
+weekly_empty: Pas assez de cocoricos cette semaine 🛌

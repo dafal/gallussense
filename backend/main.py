@@ -86,16 +86,13 @@ def waveform_to_ascii(signal, width=60, confidence=0.75, force_gray=True):
     ascii_wave = ""
 
     def ylorrd_color(conf):
-        """
-        Map a confidence (0.5 to 1.0) to ANSI 256 YlOrRd color.
-        """
-        conf = max(0.5, min(1.0, conf))  # clamp
+        conf = max(0.5, min(1.0, conf))
         if conf < 0.75:
             ratio = (conf - 0.5) / 0.25
-            code = int(226 + ratio * (208 - 226))  # yellow to orange
+            code = int(226 + ratio * (208 - 226))
         else:
             ratio = (conf - 0.75) / 0.25
-            code = int(208 + ratio * (196 - 208))  # orange to red
+            code = int(208 + ratio * (196 - 208))
         return f"\033[38;5;{code}m"
 
     color = "\033[90m" if force_gray else ylorrd_color(confidence)
@@ -111,7 +108,7 @@ def waveform_to_ascii(signal, width=60, confidence=0.75, force_gray=True):
 def save_rooster_sample(signal, confidence):
     from datetime import datetime
     import os
-    from scipy.io.wavfile import write as wav_write
+    import soundfile as sf
     import matplotlib.pyplot as plt
     import librosa.display
 
@@ -128,7 +125,7 @@ def save_rooster_sample(signal, confidence):
     png_path = os.path.join(dir_path, f"{base_filename}.png")
 
     wav_signal = np.int16(signal * 32767)
-    wav_write(wav_path, sr, wav_signal)
+    sf.write("fichier.ogg", signal, samplerate=sr, format='OGG', subtype='VORBIS')
 
     stft = librosa.stft(signal)
     spectrogram = np.abs(stft)
@@ -228,7 +225,7 @@ class DetectionRound:
         self.trigger_if_needed()
 
     def _run(self):
-        logging.info("🌀 Tour de détection lancé...")
+        logging.info("🌀 Detection round started...")
         time.sleep(self.duration)
 
         with self.lock:
@@ -240,18 +237,17 @@ class DetectionRound:
                     args=(signal, conf),
                     daemon=True
                 ).start()
-                logging.info("🎯 Meilleur 🐓 détecté, enregistrement lancé")
+                logging.info("🎯 Best 🐓 detected, saving started")
             else:
-                logging.info("⛔ Aucun rooster pendant ce tour")
+                logging.info("⛔ No rooster detected during this round")
             self.detections.clear()
             self.active = False
 
     def _async_save_and_log(self, signal, conf):
         audio_path, spec_path = save_rooster_sample(signal, conf)
         log_detection(audio_path, spec_path, conf)
-        logging.info("✅ Fichiers enregistrés et DB mise à jour")
+        logging.info("✅ Files saved and database updated")
 
-# === Nouvelle analyze_audio ===
 def analyze_audio():
     logging.info(f"🎧 Detection running (rooster only, confidence ≥ {int(confidence_threshold * 100)}%)...")
     previous_mfcc = None
@@ -269,7 +265,7 @@ def analyze_audio():
             rms_energy = np.sqrt(np.mean(signal ** 2))
             logging.debug(f"🔊 RMS Energy: {rms_energy:.4f}")
             if rms_energy < 0.01:
-                logging.debug("📉 Signal trop faible, ignoré.")
+                logging.debug("📉 Signal too weak, skipped.")
                 ascii_wave = waveform_to_ascii(signal)
                 logging.info(f"Prediction: silent            (0.00) | {ascii_wave}")
                 time.sleep(hop_interval)
@@ -302,12 +298,11 @@ def analyze_audio():
 
             if prediction == 1 and conf >= confidence_threshold:
                 detection_round.add_detection(signal, conf)
-                msg += " 🐔 Ajouté au tour de détection"
+                msg += " 🐔 Added to detection round"
 
             logging.info(msg)
 
         time.sleep(hop_interval)
-
 
 if __name__ == "__main__":
     init_db()
