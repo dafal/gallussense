@@ -125,7 +125,7 @@ def save_rooster_sample(signal, confidence):
     png_path = os.path.join(dir_path, f"{base_filename}.png")
 
     wav_signal = np.int16(signal * 32767)
-    sf.write("fichier.ogg", signal, samplerate=sr, format='OGG', subtype='VORBIS')
+    wav_write(wav_path, sr, wav_signal)
 
     stft = librosa.stft(signal)
     spectrogram = np.abs(stft)
