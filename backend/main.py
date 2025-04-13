@@ -79,22 +79,34 @@ def log_detection(audio_path=None, spectrogram_path=None, confidence=None):
     conn.close()
     logging.debug(f"📌 Detection logged at {now} with confidence {confidence_int}% and files.")
 
-def waveform_to_ascii(signal, width=60, color="gray"):
+def waveform_to_ascii(signal, width=60, confidence=0.75, force_gray=True):
     blocks = "▁▂▃▄▅▆▇█"
-    colors = {
-        "gray": "\033[90m",
-        "yellow": "\033[93m",
-        "red": "\033[91m",
-        "reset": "\033[0m"
-    }
     signal = signal[:len(signal) - len(signal) % width]
     chunk = len(signal) // width
     ascii_wave = ""
+
+    def ylorrd_color(conf):
+        """
+        Map a confidence (0.5 to 1.0) to ANSI 256 YlOrRd color.
+        """
+        conf = max(0.5, min(1.0, conf))  # clamp
+        if conf < 0.75:
+            ratio = (conf - 0.5) / 0.25
+            code = int(226 + ratio * (208 - 226))  # yellow to orange
+        else:
+            ratio = (conf - 0.75) / 0.25
+            code = int(208 + ratio * (196 - 208))  # orange to red
+        return f"\033[38;5;{code}m"
+
+    color = "\033[90m" if force_gray else ylorrd_color(confidence)
+
     for i in range(width):
-        val = np.mean(np.abs(signal[i * chunk:(i + 1) * chunk]))
+        chunk_vals = signal[i * chunk:(i + 1) * chunk]
+        val = np.mean(np.abs(chunk_vals))
         idx = min(int(val * len(blocks)), len(blocks) - 1)
-        ascii_wave += blocks[idx]
-    return f"{colors.get(color, '')}{ascii_wave}{colors['reset']}"
+        ascii_wave += f"{color}{blocks[idx]}\033[0m"
+
+    return ascii_wave
 
 def save_rooster_sample(signal, confidence):
     from datetime import datetime
@@ -198,14 +210,55 @@ def capture_audio():
         logging.info("🛌 ffmpeg stopped.")
         process.terminate()
 
+class DetectionRound:
+    def __init__(self, duration):
+        self.detections = []
+        self.duration = duration
+        self.active = False
+        self.lock = threading.Lock()
+
+    def trigger_if_needed(self):
+        if not self.active:
+            self.active = True
+            threading.Thread(target=self._run, daemon=True).start()
+
+    def add_detection(self, signal, conf):
+        with self.lock:
+            self.detections.append((conf, signal.copy()))
+        self.trigger_if_needed()
+
+    def _run(self):
+        logging.info("🌀 Tour de détection lancé...")
+        time.sleep(self.duration)
+
+        with self.lock:
+            if self.detections:
+                best = max(self.detections, key=lambda x: x[0])
+                conf, signal = best
+                threading.Thread(
+                    target=self._async_save_and_log,
+                    args=(signal, conf),
+                    daemon=True
+                ).start()
+                logging.info("🎯 Meilleur 🐓 détecté, enregistrement lancé")
+            else:
+                logging.info("⛔ Aucun rooster pendant ce tour")
+            self.detections.clear()
+            self.active = False
+
+    def _async_save_and_log(self, signal, conf):
+        audio_path, spec_path = save_rooster_sample(signal, conf)
+        log_detection(audio_path, spec_path, conf)
+        logging.info("✅ Fichiers enregistrés et DB mise à jour")
+
+# === Nouvelle analyze_audio ===
 def analyze_audio():
-    global last_detection_time
     logging.info(f"🎧 Detection running (rooster only, confidence ≥ {int(confidence_threshold * 100)}%)...")
     previous_mfcc = None
     last_unique_mfcc_time = time.time()
     label_names = {1: "rooster", 0: "non_rooster"}
 
-    pending_detections = []
+    detection_round = DetectionRound(duration=window_size + hop_interval)
 
     while not stop_event.is_set():
         if len(audio_buffer) >= sr * window_size:
@@ -216,8 +269,8 @@ def analyze_audio():
             rms_energy = np.sqrt(np.mean(signal ** 2))
             logging.debug(f"🔊 RMS Energy: {rms_energy:.4f}")
             if rms_energy < 0.01:
-                logging.warning("📉 Signal too weak, skipped.")
-                ascii_wave = waveform_to_ascii(signal, color="gray")
+                logging.debug("📉 Signal trop faible, ignoré.")
+                ascii_wave = waveform_to_ascii(signal)
                 logging.info(f"Prediction: silent            (0.00) | {ascii_wave}")
                 time.sleep(hop_interval)
                 continue
@@ -242,50 +295,14 @@ def analyze_audio():
             conf = np.max(proba)
             label = label_names[prediction]
 
-            audio_path, spec_path = (None, None)
-            if prediction == 1 and save_samples:
-                audio_path, spec_path = save_rooster_sample(signal, conf)
-
-            if prediction == 1:
-                color = "red" if conf > 0.9 else "yellow"
-            else:
-                color = "gray"
-
-            ascii_wave = waveform_to_ascii(signal, color=color)
-            current_time = time.time()
-
+            force_gray = prediction != 1
+            ascii_wave = waveform_to_ascii(signal, confidence=conf, force_gray=force_gray)
             label_padded = f"{label:<17}"
             msg = f"Prediction: {label_padded} ({conf:.2f}) | {ascii_wave}"
 
-            # Handle consecutive detections intelligently
             if prediction == 1 and conf >= confidence_threshold:
-                # Add new detection to buffer
-                pending_detections.append({
-                    "time": current_time,
-                    "conf": conf,
-                    "audio_path": audio_path,
-                    "spec_path": spec_path
-                })
-
-                # If we have more than 2 pending, flush the best one
-                if len(pending_detections) >= 3:
-                    best = max(pending_detections, key=lambda d: d["conf"])
-                    log_detection(best["audio_path"], best["spec_path"], best["conf"])
-                    last_detection_time = best["time"]
-                    pending_detections.clear()
-                    msg += " ✅ Best of 3 logged"
-                else:
-                    msg += f" 🐓 COCORICOOOO !!! ⏳ Waiting for next detection ({len(pending_detections)}/2)"
-
-            # Force logging if no new detection after X seconds
-            if pending_detections:
-                oldest = pending_detections[0]["time"]
-                if current_time - oldest > (detection_cooldown + hop_interval):
-                    best = max(pending_detections, key=lambda d: d["conf"])
-                    log_detection(best["audio_path"], best["spec_path"], best["conf"])
-                    last_detection_time = best["time"]
-                    pending_detections.clear()
-                    msg += " 🕒 Timeout reached, ✅ best logged"
+                detection_round.add_detection(signal, conf)
+                msg += " 🐔 Ajouté au tour de détection"
 
             logging.info(msg)
 

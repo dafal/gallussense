@@ -6,6 +6,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import calplot
+import numpy as np
 import os
 
 # === Streamlit configuration ===
@@ -98,19 +99,68 @@ else:
     pivot_df = pivot_df.reindex(columns=all_hours, fill_value=0)
     pivot_df["Total"] = pivot_df.sum(axis=1)
 
+
+    # === Création du masque des indisponibilités (no_detections)
+    no_detection_mask = pd.DataFrame(False, index=pivot_df.index, columns=pivot_df.columns.drop("Total"))
+    no_detection_file = "db/no_detections.txt"
+    if os.path.exists(no_detection_file):
+        with open(no_detection_file) as f:
+            lines = f.readlines()
+        no_detect_entries = [line.strip().split() for line in lines if line.strip()]
+        for date_str, hour_str in no_detect_entries:
+            try:
+                date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                hour = int(hour_str)
+                if date in no_detection_mask.index and hour in no_detection_mask.columns:
+                    no_detection_mask.at[date, hour] = True
+            except Exception as e:
+                st.warning(f"⚠️ Ligne invalide dans no_detections.txt: {date_str} {hour_str}")
+
+
+
+
     fig, ax = plt.subplots(figsize=(13, min(0.4 * len(pivot_df), 12)))
+
+    from matplotlib.colors import ListedColormap
+    import numpy as np
+
+    # Créer la palette YlOrRd, et définir une couleur spéciale pour les NaN (= no_detections)
+    base_cmap = sns.color_palette("YlOrRd", as_cmap=True)
+    cmap = base_cmap
+    cmap.set_bad(color="lightgray")  # gris pour les NaN (indisponibles)
+
+    # On crée une copie des données, avec NaN uniquement pour les indisponibilités
+    data_to_plot = pivot_df.drop(columns=["Total"]).copy()
+    data_to_plot = data_to_plot.astype(float)  # Assurer compatibilité NaN
+
+    # Appliquer les indisponibilités (NaN pour gris)
+    no_detection_file = "db/no_detections.txt"
+    if os.path.exists(no_detection_file):
+        with open(no_detection_file) as f:
+            lines = f.readlines()
+        no_detect_entries = [line.strip().split() for line in lines if line.strip()]
+        for date_str, hour_str in no_detect_entries:
+            try:
+                date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                hour = int(hour_str)
+                if date in data_to_plot.index and hour in data_to_plot.columns:
+                    data_to_plot.at[date, hour] = np.nan
+            except Exception as e:
+                st.warning(f"⚠️ Ligne invalide dans no_detections.txt: {date_str} {hour_str}")
+
+    # Heatmap finale
     sns.heatmap(
-        pivot_df.drop(columns=["Total"]),
-        cmap="YlOrRd",
-        linewidths=0.3,
-        linecolor="gray",
-        annot=True,
-        fmt="d",
-        annot_kws={"color": "black"},
-        cbar=False,
-        xticklabels=True,
-        yticklabels=True,
-        ax=ax
+    data_to_plot,
+    cmap=cmap,
+    linewidths=0.3,
+    linecolor="gray",
+    annot=pivot_df.drop(columns=["Total"]),
+    fmt="d",
+    annot_kws={"color": "black"},
+    cbar=False,
+    xticklabels=True,
+    yticklabels=True,
+    ax=ax
     )
 
     ax.set_title("")
@@ -122,7 +172,7 @@ else:
 
     st.pyplot(fig)
 
-    # === Yearly calendar ===
+    # === Calendrier annuel ===
     st.subheader("🗓️ Vue annuelle des cocoricos")
 
     daily_counts = df['timestamp'].dt.date.value_counts().sort_index()
