@@ -9,7 +9,7 @@ import sqlite3
 import os
 import fcntl
 import logging
-from scipy.io.wavfile import wav_write
+from scipy.io.wavfile import write as wav_write
 
 # === Basic Logging ===
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
