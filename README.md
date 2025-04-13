@@ -91,6 +91,24 @@ Make sure to define the following variables to configure your detection system:
 | `SAVE_SAMPLES`           | Generate and save audio and spectrogramm         | `false`               |
 ---
 
+### 🚫 `no_detections.txt` – When Silence Speaks
+
+GallusSense doesn't just track crowing—it also takes note of when **nothing happens**. The `no_detections.txt` file logs time slots during which **no rooster calls were detected**.
+
+This text file explicitly records quiet periods, hour by hour, each day. It's used to **visually highlight no-detection periods** in the Streamlit dashboard.
+
+- **Name**: `no_detections.txt`
+- **Location**: `db/no_detections.txt` (inside the mounted `/db` directory)
+- **Format**: one line per silent hour, with the format:
+
+  ```
+  2025-04-12 08
+  2025-04-12 09
+  2025-04-12 10
+  ```
+
+Each line contains a date (`YYYY-MM-DD`) followed by an hour (`HH` in 24-hour format), indicating a time window when no detection occurred.
+
 ### ▶️ Quick Start with Docker Compose
 
 Create a `docker-compose.yml` in your project root or use the one provided in the repo:
@@ -106,8 +124,8 @@ services:
       MODEL_PATH: ./models/gallussense_rf.pkl
       CONFIDENCE_THRESHOLD: 0.6
       SAVE_SAMPLES: true
+      TZ: Europe/Brussels
     volumes:
-      - ./models:/app/models
       - ./db:/app/db
       - ./records:/app/records
     restart: always
