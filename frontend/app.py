@@ -11,7 +11,7 @@ import os
 import yaml
 from language_detection import detect_browser_language
 
-st.set_page_config(page_title="GallusSense 🐓", layout="wide")
+st.set_page_config(page_title="GallusSense", page_icon="logo.png", layout="wide")
 
 # === Detect browser locales ===
 browser_language = detect_browser_language()
